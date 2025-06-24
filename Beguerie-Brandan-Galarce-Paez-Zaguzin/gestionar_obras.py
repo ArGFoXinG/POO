@@ -2,6 +2,7 @@ import pandas as pd
 from modelo_orm import *
 from datetime import datetime
 import peewee
+import unicodedata # ¡No olvides importar esto!
 
 print(f"Versión de Peewee utilizada: {peewee.__version__}")
 
@@ -95,8 +96,22 @@ class GestionarObra:
             for col in int_cols_to_fill:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-
+            
+            # Удаляем строки, где 'nombre' или 'barrio' являются NaN (отсутствующими)
+            # Это должно быть ДО преобразования 'barrio' в str, чтобы NaN был распознан
             df.dropna(subset=['nombre', 'barrio'], inplace=True)
+            print(f"Filas después de dropna: {len(df)}") # Para depuración
+
+            # Нормализация названий barrios
+            if 'barrio' in df.columns:
+                print("Normalizando nombres de barrios...") # Para depuración
+                df['barrio'] = df['barrio'].astype(str).apply(
+                    lambda x: unicodedata.normalize('NFKD', x)
+                                         .encode('ascii', 'ignore')
+                                         .decode('utf-8')
+                                         .lower()
+                                         .strip()
+                )
 
             print(f"Datos limpiados. Cantidad de filas inicial: {initial_rows}. Después de la limpieza: {len(df)}")
             return df
@@ -124,7 +139,9 @@ class GestionarObra:
                 try:
                     tipo_obra_obj, _ = TipoObra.get_or_create(nombre=fila['tipo_obra'])
                     area_responsable_obj, _ = AreaResponsable.get_or_create(nombre=fila['area'])
-                    barrio_obj, _ = Barrio.get_or_create(nombre=fila['barrio'])
+                    
+                    # Usamos el nombre de barrio normalizado para buscar/crear
+                    barrio_obj, _ = Barrio.get_or_create(nombre=fila['barrio']) 
 
                     obra_existente = Obra.get_or_none(Obra.nombre == fila['nombre'], Obra.barrio == barrio_obj)
 
@@ -243,8 +260,11 @@ class GestionarObra:
                 else:
                     print("No hay barrios en la base de datos.")
             else:
+                # Normaliza la entrada del usuario antes de buscar/crear el barrio
+                normalized_barrio_input = unicodedata.normalize('NFKD', input_barrio).encode('ascii', 'ignore').decode('utf-8').lower().strip()
+                
                 cls.conectar_db()
-                barrio_obj, created = Barrio.get_or_create(nombre=input_barrio)
+                barrio_obj, created = Barrio.get_or_create(nombre=normalized_barrio_input)
                 db.close()
                 if created:
                     print(f"Nuevo barrio creado: {barrio_obj.nombre}")
@@ -431,14 +451,10 @@ class GestionarObra:
 
     @classmethod
     def obtener_indicadores(cls):
-        # Obtiene y muestra varios indicadores sobre las obras.
-
-
         cls.conectar_db()
         try:
             print(f"\n--- Indicadores de Obras ---")
 
-            # a. Listado de todas las áreas responsables.
             print("\na. Listado de todas las áreas responsables:")
             areas = AreaResponsable.select().order_by(AreaResponsable.nombre)
             for area in areas:
@@ -446,8 +462,6 @@ class GestionarObra:
             if not areas:
                 print("   No hay áreas responsables.")
 
-
-            # b. Listado de todos los tipos de obra.
             print("\nb. Listado de todos los tipos de obra:")
             tipos_obra = TipoObra.select().order_by(TipoObra.nombre)
             for tipo in tipos_obra:
@@ -455,7 +469,6 @@ class GestionarObra:
             if not tipos_obra:
                 print("   No hay tipos de obra.")
 
-            # c. Cantidad de obras que se encuentran en cada etapa.
             print("\nc. Cantidad de obras por etapa:")
             etapas = Obra.select(Obra.etapa, fn.COUNT(Obra.id).alias('count')).group_by(Obra.etapa)
             for etapa in etapas:
@@ -463,7 +476,6 @@ class GestionarObra:
             if not etapas:
                 print("   No hay obras en ninguna etapa.")
 
-            # d. Cantidad de obras y monto total de inversión por tipo de obra.
             print("\nd. Cantidad de obras y monto total de inversión por tipo de obra:")
             tipos_inversion = (Obra.select(TipoObra.nombre, fn.COUNT(Obra.id).alias('cantidad_obras'), fn.SUM(Obra.monto_contrato).alias('monto_total'))
                                 .join(TipoObra)
@@ -474,32 +486,52 @@ class GestionarObra:
             if not tipos_inversion:
                 print("   No hay datos de obras por tipo para calcular la inversión.")
 
-            # e. Listado de todos los barrios pertenecientes a las comunas 1, 2 y 3.
-            print("\ne. Listado de barrios en Comunas 1, 2 y 3:")
-            comunas_interes = ['1', '2', '3']
-            barrios_comunas = (Barrio.select(Barrio.nombre)
-                                .join(Obra)
-                                .where(Obra.comuna.in_(comunas_interes))
-                                .distinct()
-                                .order_by(Barrio.nombre))
-            if barrios_comunas.count() > 0:
-                for barrio in barrios_comunas:
-                    print(f"   - {barrio.nombre}")
+            # e. Listado de barrios en Comunas seleccionadas (INTERACTIVO)
+            print("\ne. Listado de barrios en comunas seleccionadas:")
+            
+            cls.conectar_db() # Asegurarse de que la conexión está abierta para esta parte
+            comunas_disponibles = Obra.select(Obra.comuna).distinct().where(Obra.comuna.is_null(False)).order_by(Obra.comuna)
+            if comunas_disponibles.count() > 0:
+                print("Comunas disponibles:", ", ".join([str(c.comuna) for c in comunas_disponibles]))
+                comunas_input = input("Ingrese los números de comuna (ej. '1,2,3' o 'todas'): ").strip()
+                
+                if comunas_input.lower() == 'todas':
+                    comunas_a_filtrar = [str(c.comuna) for c in comunas_disponibles]
+                else:
+                    comunas_raw = [c.strip() for c in comunas_input.split(',')]
+                    comunas_a_filtrar = []
+                    for c in comunas_raw:
+                        if c.isdigit() and int(c) > 0 and int(c) <= 15:
+                            comunas_a_filtrar.append(c)
+                        else:
+                            print(f"Advertencia: '{c}' no es un número de comuna válido (1-15) y será ignorado.")
+                
+                if not comunas_a_filtrar:
+                    print("   No se ingresaron comunas válidas para filtrar.")
+                else:
+                    barrios_comunas = (Barrio.select(Barrio.nombre)
+                                    .join(Obra)
+                                    .where(Obra.comuna.in_(comunas_a_filtrar))
+                                    .distinct()
+                                    .order_by(Barrio.nombre))
+                    
+                    if barrios_comunas.count() > 0:
+                        print(f"   Barrios en comunas {', '.join(comunas_a_filtrar)}:")
+                        for barrio in barrios_comunas:
+                            print(f"      - {barrio.nombre.title()}") 
+                    else:
+                        print(f"   No hay barrios asociados a obras en las comunas {', '.join(comunas_a_filtrar)}.")
             else:
-                print("   No hay barrios asociados a obras en las comunas 1, 2, 3.")
+                print("   No hay información de comunas en la base de datos.")
 
 
-            # f. Cantidad de obras finalizadas en un plazo menor o igual a 24 meses.
             print("\nf. Cantidad de obras finalizadas en un plazo menor o igual a 24 meses:")
-            # Se asume que 'plazo_meses' es el plazo total previsto para la obra.
-            # Y que 'Finalizada' es la etapa para obras terminadas.
             obras_finalizadas_en_plazo = Obra.select().where(
                 (Obra.etapa == 'Finalizada') &
                 (Obra.plazo_meses <= 24)
             ).count()
             print(f"   - Cantidad de obras: {obras_finalizadas_en_plazo}")
 
-            # g. Monto total de inversión.
             print("\ng. Monto total de inversión:")
             total_inversion_general = Obra.select(fn.SUM(Obra.monto_contrato)).scalar()
             if total_inversion_general is not None:
@@ -508,14 +540,12 @@ class GestionarObra:
                 print("   No hay información de inversión disponible.")
 
 
-            # Otros indicadores que ya estaban
             print("\n--- Otros Indicadores Originales ---")
 
             total_obras = Obra.select().count()
             print(f"1. Cantidad total de obras: {total_obras}")
 
             print("\n2. Cantidad de obras por etapa (resumen):")
-            # Este ya está cubierto por 'c' arriba, pero lo mantengo si se quiere un formato diferente.
             etapas_resumen = Obra.select(Obra.etapa, fn.COUNT(Obra.id).alias('count')).group_by(Obra.etapa)
             for etapa in etapas_resumen:
                 print(f"   - {etapa.etapa}: {etapa.count}")
@@ -524,7 +554,6 @@ class GestionarObra:
             print(f"\n3. Suma total de inversión (resumen): ${total_inversion:,.2f}")
 
             print("\n4. Cantidad de obras por tipo (resumen):")
-            # Este ya está cubierto por 'd' arriba.
             tipos_resumen = (Obra.select(TipoObra.nombre, fn.COUNT(Obra.id).alias('count'))
                         .join(TipoObra)
                         .group_by(TipoObra.nombre))
@@ -538,16 +567,40 @@ class GestionarObra:
                            .order_by(fn.COUNT(Obra.id).desc())
                            .limit(5))
             for i, barrio in enumerate(top_barrios):
-                print(f"   {i+1}. {barrio.barrio.nombre}: {barrio.count}")
+                print(f"   {i+1}. {barrio.barrio.nombre.title()}: {barrio.count}")
 
-            print("\n6. Obras en Comunas 1, 2, 3 (detallado):")
-            # Este es un detalle de 'e'
-            obras_en_comunas = Obra.select().where(Obra.comuna.in_(comunas_interes))
-            if obras_en_comunas.count() > 0:
-                for obra in obras_en_comunas:
-                    print(f"   - ID: {obra.id}, Nombre: {obra.nombre}, Comuna: {obra.comuna}, Etapa: {obra.etapa}")
+            # 6. Obras en Comunas seleccionadas (INTERACTIVO)
+            print("\n6. Obras en Comunas seleccionadas (detallado):")
+            
+            cls.conectar_db() # Asegurarse de que la conexión está abierta para esta parte
+            comunas_disponibles_detallado = Obra.select(Obra.comuna).distinct().where(Obra.comuna.is_null(False)).order_by(Obra.comuna)
+            if comunas_disponibles_detallado.count() > 0:
+                print("Comunas disponibles para detalle:", ", ".join([str(c.comuna) for c in comunas_disponibles_detallado]))
+                comunas_input_detallado = input("Ingrese los números de comuna para el detalle (ej. '1,2,3' o 'todas'): ").strip()
+                
+                if comunas_input_detallado.lower() == 'todas':
+                    comunas_a_filtrar_detallado = [str(c.comuna) for c in comunas_disponibles_detallado]
+                else:
+                    comunas_raw_detallado = [c.strip() for c in comunas_input_detallado.split(',')]
+                    comunas_a_filtrar_detallado = []
+                    for c in comunas_raw_detallado:
+                        if c.isdigit() and int(c) > 0 and int(c) <= 15:
+                            comunas_a_filtrar_detallado.append(c)
+                        else:
+                            print(f"Advertencia: '{c}' no es un número de comuna válido (1-15) y será ignorado.")
+                
+                if not comunas_a_filtrar_detallado:
+                    print("   No se ingresaron comunas válidas para el detalle de obras.")
+                else:
+                    obras_en_comunas_detallado = Obra.select().where(Obra.comuna.in_(comunas_a_filtrar_detallado))
+                    if obras_en_comunas_detallado.count() > 0:
+                        print(f"   Detalle de obras en comunas {', '.join(comunas_a_filtrar_detallado)}:")
+                        for obra in obras_en_comunas_detallado:
+                            print(f"      - ID: {obra.id}, Nombre: {obra.nombre}, Comuna: {obra.comuna}, Etapa: {obra.etapa}, Barrio: {obra.barrio.nombre.title()}") 
+                    else:
+                        print(f"   No hay obras en las comunas {', '.join(comunas_a_filtrar_detallado)}.")
             else:
-                print("   No hay obras en las comunas 1, 2, 3.")
+                print("   No hay información de comunas en la base de datos para mostrar el detalle de obras.")
 
             print("\n7. Porcentaje de avance promedio para obras en 'En Ejecucion':")
             avg_avance = Obra.select(fn.AVG(Obra.porcentaje_avance)).where(Obra.etapa == 'En Ejecucion').scalar()
@@ -581,7 +634,8 @@ if __name__ == '__main__':
         print("1. Crear nueva obra y gestionar sus etapas")
         print("2. Gestionar etapas de una obra existente")
         print("3. Mostrar indicadores (reportes)")
-        print("4. Salir")
+        print("4. Mostrar indicadores y volver al menú")
+        print("5. Salir")
 
         opcion = input("Seleccione una opción: ")
 
@@ -596,8 +650,11 @@ if __name__ == '__main__':
         elif opcion == '3':
             GestionarObra.obtener_indicadores()
         elif opcion == '4':
+            print("Mostrando indicadores...")
+            GestionarObra.obtener_indicadores()
+            # No hay 'break' aquí, el bucle 'while True' continuará
+        elif opcion == '5':
             print("Saliendo del programa. ¡Hasta luego!")
-            GestionarObra.obtener_indicadores() # Llama a los indicadores al salir
             break
         else:
-            print("Opción inválida. Por favor, seleccione un número del 1 al 4.")
+            print("Opción inválida. Por favor, seleccione un número del 1 al 5.")
