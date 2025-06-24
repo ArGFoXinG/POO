@@ -1,5 +1,5 @@
 import pandas as pd
-from modelo_orm import * 
+from modelo_orm import *
 from datetime import datetime
 import peewee
 
@@ -11,7 +11,7 @@ class GestionarObra:
     @classmethod
     def conectar_db(cls):
         # Establece la conexión a la base de datos si aún no está abierta.
-        
+
         if db.is_closed():
             try:
                 db.connect()
@@ -23,7 +23,7 @@ class GestionarObra:
     @classmethod
     def mapear_orm(cls):
         # Crea las tablas en la base de datos si aún no existen.
-        
+
         cls.conectar_db()
         try:
             db.create_tables([TipoObra, AreaResponsable, Barrio, Obra], safe=True)
@@ -37,12 +37,12 @@ class GestionarObra:
     @classmethod
     def extraer_datos(cls):
         # Extrae datos del archivo CSV.
-        
+
         try:
             with open('observatorio-de-obras-urbanas.csv', 'r', encoding='latin-1') as f:
                 primera_linea = f.readline()
                 print("Encabezados del CSV (crudos):", primera_linea.strip())
-            
+
             df = pd.read_csv(
                 'observatorio-de-obras-urbanas.csv',
                 encoding='latin-1',
@@ -58,10 +58,10 @@ class GestionarObra:
     @classmethod
     def limpiar_datos(cls, df):
         # Limpia los datos del DataFrame: elimina filas vacías, procesa fechas y montos.
-        
+
         if df is not None:
             initial_rows = len(df)
-            
+
             df.rename(columns={
                 'area_responsable': 'area',
                 'tipo': 'tipo_obra',
@@ -84,7 +84,7 @@ class GestionarObra:
                     df['monto_contrato'].astype(str).str.replace('$', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.'),
                     errors='coerce'
                 )
-            
+
             # CORRECCIÓN: Siempre devolvemos True/False, no None
             if 'destacada' in df.columns:
                 df['destacada'] = df['destacada'].astype(str).str.lower().apply(lambda x: True if x == 'si' else False)
@@ -105,20 +105,20 @@ class GestionarObra:
     @classmethod
     def cargar_datos(cls):
         # Carga los datos limpios del DataFrame a la base de datos.
-        
+
         df = cls.extraer_datos()
         if df is None:
             print("No se pudieron cargar los datos")
             return
-        
+
         df = cls.limpiar_datos(df)
         if df is None or df.empty:
             print("No hay datos para cargar después de la limpieza.")
             return
-        
+
         print("Iniciando carga de datos en la base de datos...")
         cls.conectar_db()
-        
+
         with db.atomic():
             for index, fila in df.iterrows():
                 try:
@@ -131,7 +131,7 @@ class GestionarObra:
                     if obra_existente:
                         print(f"Error de integridad de datos al cargar fila {index+1}: Obra con nombre '{fila['nombre']}' y barrio '{fila['barrio']}' ya existe. Saltada.")
                         continue
-                    
+
                     Obra.create(
                         entorno=fila.get('entorno'),
                         nombre=fila.get('nombre'),
@@ -180,7 +180,7 @@ class GestionarObra:
         # Crea una nueva obra de forma interactiva y la devuelve
         print("\nCrear nueva obra")
         nombre = input("Ingrese el nombre de la obra: ")
-        
+
         cls.conectar_db()
         if Obra.select().where(Obra.nombre == nombre).exists():
             print(f"Una obra con el nombre '{nombre}' ya existe. Por favor, elija otro nombre.")
@@ -250,7 +250,7 @@ class GestionarObra:
                     print(f"Nuevo barrio creado: {barrio_obj.nombre}")
                 else:
                     print(f"Usando barrio existente: {barrio_obj.nombre}")
-        
+
         direccion = input("Ingrese la dirección: ")
         comuna = input("Ingrese el número de comuna (opcional, deje en blanco si no aplica): ")
         if not comuna:
@@ -266,7 +266,7 @@ class GestionarObra:
             direccion=direccion,
             comuna=comuna
         )
-        
+
         cls.conectar_db()
         try:
             nueva_obra_instance.save()
@@ -284,7 +284,7 @@ class GestionarObra:
     def _menu_gestion_obra(cls, obra_id):
         # Presenta un menú interactivo para gestionar las etapas de una obra específica.
         # Permite al usuario seleccionar acciones y salir en cualquier momento.
-        
+
         while True:
             cls.conectar_db()
             try:
@@ -293,13 +293,13 @@ class GestionarObra:
                 print(f"Obra con ID {obra_id} no encontrada.")
                 db.close()
                 return # Salir si la obra no se encuentra
-            
+
             current_etapa = obra_a_actualizar.etapa
             print(f"\nGestión de etapas para la obra: {obra_a_actualizar.nombre} (ID: {obra_id})")
             print(f"Etapa actual: {current_etapa}")
 
             print("\nOpciones:")
-            
+
             # Ofrecemos opciones dependiendo de la etapa actual
             if current_etapa == 'Proyecto':
                 print("1. Iniciar Contratación")
@@ -315,7 +315,7 @@ class GestionarObra:
                 print("5. Rescindir Obra")
             elif current_etapa in ['Finalizada', 'Rescindida']:
                 print(f"La obra ya está {current_etapa.lower()}. No se pueden realizar más cambios de etapa.")
-            
+
             print("0. Volver al menú principal")
 
             opcion_etapa = input("Seleccione una opción: ")
@@ -349,7 +349,7 @@ class GestionarObra:
                     except ValueError:
                         print("Entrada inválida para la cantidad de mano de obra. Usando 0.")
                         mano_obra_val = 0
-                    
+
                     try:
                         fecha_inicio_dt = datetime.strptime(fecha_inicio_str, '%Y-%m-%d').date()
                         fecha_fin_inicial_dt = datetime.strptime(fecha_fin_inicial_str, '%Y-%m-%d').date()
@@ -359,7 +359,7 @@ class GestionarObra:
                         continue
 
                     obra_a_actualizar.iniciar_obra(destacada_val, fecha_inicio_dt, fecha_fin_inicial_dt, fuente_financiamiento_val, mano_obra_val)
-                
+
                 elif current_etapa == 'En Ejecucion':
                     if opcion_etapa == '1':
                         try:
@@ -387,7 +387,7 @@ class GestionarObra:
                         break # Salir del bucle después de rescindir
                     else:
                         print("Opción inválida para la etapa actual.")
-                
+
                 elif current_etapa in ['Finalizada', 'Rescindida']:
                     print("Esta obra ya ha finalizado o ha sido rescindida. No se pueden realizar más cambios de etapa.")
                     break # Salir del bucle ya que no se permiten más cambios
@@ -405,7 +405,7 @@ class GestionarObra:
     def _avanzar_etapa_obra_existente(cls):
         # Permite seleccionar una obra existente y avanzar su etapa.
         # Invoca a _menu_gestion_obra para la gestión interactiva.
-        
+
         print("\nCambiar etapa de obra existente")
         cls.conectar_db()
         obras = Obra.select().order_by(Obra.id)
@@ -413,7 +413,7 @@ class GestionarObra:
             print("No hay obras en la base de datos.")
             db.close()
             return
-        
+
         print("Lista de obras:")
         for obra in obras:
             print(f"ID: {obra.id}, Nombre: {obra.nombre}, Etapa actual: {obra.etapa}")
@@ -432,27 +432,103 @@ class GestionarObra:
     @classmethod
     def obtener_indicadores(cls):
         # Obtiene y muestra varios indicadores sobre las obras.
-        
-        
+
+
         cls.conectar_db()
         try:
-            total_obras = Obra.select().count()
-            print(f"\nIndicadores de Obras")
-            print(f"1. Cantidad total de obras: {total_obras}")
+            print(f"\n--- Indicadores de Obras ---")
 
-            print("\n2. Cantidad de obras por etapa:")
+            # a. Listado de todas las áreas responsables.
+            print("\na. Listado de todas las áreas responsables:")
+            areas = AreaResponsable.select().order_by(AreaResponsable.nombre)
+            for area in areas:
+                print(f"   - {area.nombre}")
+            if not areas:
+                print("   No hay áreas responsables.")
+
+
+            # b. Listado de todos los tipos de obra.
+            print("\nb. Listado de todos los tipos de obra:")
+            tipos_obra = TipoObra.select().order_by(TipoObra.nombre)
+            for tipo in tipos_obra:
+                print(f"   - {tipo.nombre}")
+            if not tipos_obra:
+                print("   No hay tipos de obra.")
+
+            # c. Cantidad de obras que se encuentran en cada etapa.
+            print("\nc. Cantidad de obras por etapa:")
             etapas = Obra.select(Obra.etapa, fn.COUNT(Obra.id).alias('count')).group_by(Obra.etapa)
             for etapa in etapas:
                 print(f"   - {etapa.etapa}: {etapa.count}")
+            if not etapas:
+                print("   No hay obras en ninguna etapa.")
+
+            # d. Cantidad de obras y monto total de inversión por tipo de obra.
+            print("\nd. Cantidad de obras y monto total de inversión por tipo de obra:")
+            tipos_inversion = (Obra.select(TipoObra.nombre, fn.COUNT(Obra.id).alias('cantidad_obras'), fn.SUM(Obra.monto_contrato).alias('monto_total'))
+                                .join(TipoObra)
+                                .group_by(TipoObra.nombre))
+            for tipo in tipos_inversion:
+                monto = f"${tipo.monto_total:,.2f}" if tipo.monto_total else "N/A"
+                print(f"   - {tipo.tipo.nombre}: Cantidad = {tipo.cantidad_obras}, Inversión Total = {monto}")
+            if not tipos_inversion:
+                print("   No hay datos de obras por tipo para calcular la inversión.")
+
+            # e. Listado de todos los barrios pertenecientes a las comunas 1, 2 y 3.
+            print("\ne. Listado de barrios en Comunas 1, 2 y 3:")
+            comunas_interes = ['1', '2', '3']
+            barrios_comunas = (Barrio.select(Barrio.nombre)
+                                .join(Obra)
+                                .where(Obra.comuna.in_(comunas_interes))
+                                .distinct()
+                                .order_by(Barrio.nombre))
+            if barrios_comunas.count() > 0:
+                for barrio in barrios_comunas:
+                    print(f"   - {barrio.nombre}")
+            else:
+                print("   No hay barrios asociados a obras en las comunas 1, 2, 3.")
+
+
+            # f. Cantidad de obras finalizadas en un plazo menor o igual a 24 meses.
+            print("\nf. Cantidad de obras finalizadas en un plazo menor o igual a 24 meses:")
+            # Se asume que 'plazo_meses' es el plazo total previsto para la obra.
+            # Y que 'Finalizada' es la etapa para obras terminadas.
+            obras_finalizadas_en_plazo = Obra.select().where(
+                (Obra.etapa == 'Finalizada') &
+                (Obra.plazo_meses <= 24)
+            ).count()
+            print(f"   - Cantidad de obras: {obras_finalizadas_en_plazo}")
+
+            # g. Monto total de inversión.
+            print("\ng. Monto total de inversión:")
+            total_inversion_general = Obra.select(fn.SUM(Obra.monto_contrato)).scalar()
+            if total_inversion_general is not None:
+                print(f"   - Monto total general: ${total_inversion_general:,.2f}")
+            else:
+                print("   No hay información de inversión disponible.")
+
+
+            # Otros indicadores que ya estaban
+            print("\n--- Otros Indicadores Originales ---")
+
+            total_obras = Obra.select().count()
+            print(f"1. Cantidad total de obras: {total_obras}")
+
+            print("\n2. Cantidad de obras por etapa (resumen):")
+            # Este ya está cubierto por 'c' arriba, pero lo mantengo si se quiere un formato diferente.
+            etapas_resumen = Obra.select(Obra.etapa, fn.COUNT(Obra.id).alias('count')).group_by(Obra.etapa)
+            for etapa in etapas_resumen:
+                print(f"   - {etapa.etapa}: {etapa.count}")
 
             total_inversion = Obra.select(fn.SUM(Obra.monto_contrato)).scalar()
-            print(f"\n3. Suma total de inversión: ${total_inversion:,.2f}")
+            print(f"\n3. Suma total de inversión (resumen): ${total_inversion:,.2f}")
 
-            print("\n4. Cantidad de obras por tipo:")
-            tipos = (Obra.select(TipoObra.nombre, fn.COUNT(Obra.id).alias('count'))
+            print("\n4. Cantidad de obras por tipo (resumen):")
+            # Este ya está cubierto por 'd' arriba.
+            tipos_resumen = (Obra.select(TipoObra.nombre, fn.COUNT(Obra.id).alias('count'))
                         .join(TipoObra)
                         .group_by(TipoObra.nombre))
-            for tipo in tipos:
+            for tipo in tipos_resumen:
                 print(f"   - {tipo.tipo.nombre}: {tipo.count}")
 
             print("\n5. Top 5 barrios con mayor cantidad de obras:")
@@ -464,8 +540,8 @@ class GestionarObra:
             for i, barrio in enumerate(top_barrios):
                 print(f"   {i+1}. {barrio.barrio.nombre}: {barrio.count}")
 
-            print("\n6. Obras en Comunas 1, 2, 3:")
-            comunas_interes = ['1', '2', '3']
+            print("\n6. Obras en Comunas 1, 2, 3 (detallado):")
+            # Este es un detalle de 'e'
             obras_en_comunas = Obra.select().where(Obra.comuna.in_(comunas_interes))
             if obras_en_comunas.count() > 0:
                 for obra in obras_en_comunas:
@@ -479,7 +555,9 @@ class GestionarObra:
                 print(f"   - Porcentaje promedio: {avg_avance:.2f}%")
             else:
                 print("   No hay obras en la etapa 'En Ejecucion' para calcular el porcentaje promedio.")
-            
+
+            print("\n--- Fin de Indicadores ---")
+
         except Exception as e:
             print(f"Error al obtener indicadores: {e}")
         finally:
@@ -487,12 +565,12 @@ class GestionarObra:
 
 # Bloque principal de ejecución del programa
 if __name__ == '__main__':
-    GestionarObra.mapear_orm() 
+    GestionarObra.mapear_orm()
 
     GestionarObra.conectar_db()
     if Obra.select().count() == 0:
         print("Base de datos vacía. Cargando datos desde CSV...")
-        GestionarObra.cargar_datos() 
+        GestionarObra.cargar_datos()
         print("Datos cargados desde CSV.")
     else:
         print(f"La base de datos ya contiene {Obra.select().count()} registros. Se omite la carga desde CSV.")
@@ -501,10 +579,10 @@ if __name__ == '__main__':
     while True:
         print("\nMenú del Sistema de Gestión de Obras")
         print("1. Crear nueva obra y gestionar sus etapas")
-        print("2. Gestionar etapas de una obra existente") 
+        print("2. Gestionar etapas de una obra existente")
         print("3. Mostrar indicadores (reportes)")
         print("4. Salir")
-        
+
         opcion = input("Seleccione una opción: ")
 
         if opcion == '1':
@@ -519,6 +597,7 @@ if __name__ == '__main__':
             GestionarObra.obtener_indicadores()
         elif opcion == '4':
             print("Saliendo del programa. ¡Hasta luego!")
+            GestionarObra.obtener_indicadores() # Llama a los indicadores al salir
             break
         else:
             print("Opción inválida. Por favor, seleccione un número del 1 al 4.")
