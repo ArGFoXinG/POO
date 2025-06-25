@@ -2,7 +2,7 @@ import pandas as pd
 from modelo_orm import *
 from datetime import datetime
 import peewee
-import unicodedata # ¡No olvides importar esto!
+import unicodedata 
 
 print(f"Versión de Peewee utilizada: {peewee.__version__}")
 
@@ -92,17 +92,42 @@ class GestionarObra:
             if 'ba_elige' in df.columns:
                 df['ba_elige'] = df['ba_elige'].astype(str).str.lower().apply(lambda x: True if x == 'si' else False)
 
+           # Normalización de la columna 'etapa'
+        if 'etapa' in df.columns:
+            # conversion al bajo registro
+            df['etapa'] = df['etapa'].astype(str).str.lower().str.strip()
+
+            # dictionario para normalizar
+            etapa_mapping = {
+                'en ejecucion': 'en ejecucion',
+                'en ejecución': 'en ejecucion',
+                'en obra': 'en ejecucion', 
+                'en curso': 'en ejecucion',
+                'en proyecto': 'proyecto',
+                'en contratacion': 'en contratacion',
+                'adjudicada': 'adjudicada',
+                'finalizada': 'finalizada',
+                'proyecto finalizado': 'finalizada',
+                'rescindida': 'rescindida',
+                'rescisión': 'rescindida',
+                'paralizada': 'paralizada',
+                'neutralizada': 'paralizada',
+                'desestimada': 'desestimada',
+            }
+            df['etapa'] = df['etapa'].replace(etapa_mapping)
+
+            # convertimos al registro alto
+            df['etapa'] = df['etapa'].str.title()
             int_cols_to_fill = ['plazo_meses', 'porcentaje_avance', 'mano_obra', 'licitacion_anio']
             for col in int_cols_to_fill:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
             
-            # Удаляем строки, где 'nombre' или 'barrio' являются NaN (отсутствующими)
-            # Это должно быть ДО преобразования 'barrio' в str, чтобы NaN был распознан
+            # sin NaN
             df.dropna(subset=['nombre', 'barrio'], inplace=True)
             print(f"Filas después de dropna: {len(df)}") # Para depuración
 
-            # Нормализация названий barrios
+            #normalizacion de barrios
             if 'barrio' in df.columns:
                 print("Normalizando nombres de barrios...") # Para depuración
                 df['barrio'] = df['barrio'].astype(str).apply(
@@ -538,79 +563,8 @@ class GestionarObra:
                 print(f"   - Monto total general: ${total_inversion_general:,.2f}")
             else:
                 print("   No hay información de inversión disponible.")
-
-
-            print("\n--- Otros Indicadores Originales ---")
-
-            total_obras = Obra.select().count()
-            print(f"1. Cantidad total de obras: {total_obras}")
-
-            print("\n2. Cantidad de obras por etapa (resumen):")
-            etapas_resumen = Obra.select(Obra.etapa, fn.COUNT(Obra.id).alias('count')).group_by(Obra.etapa)
-            for etapa in etapas_resumen:
-                print(f"   - {etapa.etapa}: {etapa.count}")
-
-            total_inversion = Obra.select(fn.SUM(Obra.monto_contrato)).scalar()
-            print(f"\n3. Suma total de inversión (resumen): ${total_inversion:,.2f}")
-
-            print("\n4. Cantidad de obras por tipo (resumen):")
-            tipos_resumen = (Obra.select(TipoObra.nombre, fn.COUNT(Obra.id).alias('count'))
-                        .join(TipoObra)
-                        .group_by(TipoObra.nombre))
-            for tipo in tipos_resumen:
-                print(f"   - {tipo.tipo.nombre}: {tipo.count}")
-
-            print("\n5. Top 5 barrios con mayor cantidad de obras:")
-            top_barrios = (Obra.select(Barrio.nombre, fn.COUNT(Obra.id).alias('count'))
-                           .join(Barrio)
-                           .group_by(Barrio.nombre)
-                           .order_by(fn.COUNT(Obra.id).desc())
-                           .limit(5))
-            for i, barrio in enumerate(top_barrios):
-                print(f"   {i+1}. {barrio.barrio.nombre.title()}: {barrio.count}")
-
-            # 6. Obras en Comunas seleccionadas (INTERACTIVO)
-            print("\n6. Obras en Comunas seleccionadas (detallado):")
             
-            cls.conectar_db() # Asegurarse de que la conexión está abierta para esta parte
-            comunas_disponibles_detallado = Obra.select(Obra.comuna).distinct().where(Obra.comuna.is_null(False)).order_by(Obra.comuna)
-            if comunas_disponibles_detallado.count() > 0:
-                print("Comunas disponibles para detalle:", ", ".join([str(c.comuna) for c in comunas_disponibles_detallado]))
-                comunas_input_detallado = input("Ingrese los números de comuna para el detalle (ej. '1,2,3' o 'todas'): ").strip()
-                
-                if comunas_input_detallado.lower() == 'todas':
-                    comunas_a_filtrar_detallado = [str(c.comuna) for c in comunas_disponibles_detallado]
-                else:
-                    comunas_raw_detallado = [c.strip() for c in comunas_input_detallado.split(',')]
-                    comunas_a_filtrar_detallado = []
-                    for c in comunas_raw_detallado:
-                        if c.isdigit() and int(c) > 0 and int(c) <= 15:
-                            comunas_a_filtrar_detallado.append(c)
-                        else:
-                            print(f"Advertencia: '{c}' no es un número de comuna válido (1-15) y será ignorado.")
-                
-                if not comunas_a_filtrar_detallado:
-                    print("   No se ingresaron comunas válidas para el detalle de obras.")
-                else:
-                    obras_en_comunas_detallado = Obra.select().where(Obra.comuna.in_(comunas_a_filtrar_detallado))
-                    if obras_en_comunas_detallado.count() > 0:
-                        print(f"   Detalle de obras en comunas {', '.join(comunas_a_filtrar_detallado)}:")
-                        for obra in obras_en_comunas_detallado:
-                            print(f"      - ID: {obra.id}, Nombre: {obra.nombre}, Comuna: {obra.comuna}, Etapa: {obra.etapa}, Barrio: {obra.barrio.nombre.title()}") 
-                    else:
-                        print(f"   No hay obras en las comunas {', '.join(comunas_a_filtrar_detallado)}.")
-            else:
-                print("   No hay información de comunas en la base de datos para mostrar el detalle de obras.")
-
-            print("\n7. Porcentaje de avance promedio para obras en 'En Ejecucion':")
-            avg_avance = Obra.select(fn.AVG(Obra.porcentaje_avance)).where(Obra.etapa == 'En Ejecucion').scalar()
-            if avg_avance is not None:
-                print(f"   - Porcentaje promedio: {avg_avance:.2f}%")
-            else:
-                print("   No hay obras en la etapa 'En Ejecucion' para calcular el porcentaje promedio.")
-
             print("\n--- Fin de Indicadores ---")
-
         except Exception as e:
             print(f"Error al obtener indicadores: {e}")
         finally:
@@ -633,9 +587,8 @@ if __name__ == '__main__':
         print("\nMenú del Sistema de Gestión de Obras")
         print("1. Crear nueva obra y gestionar sus etapas")
         print("2. Gestionar etapas de una obra existente")
-        print("3. Mostrar indicadores (reportes)")
-        print("4. Mostrar indicadores y volver al menú")
-        print("5. Salir")
+        print("3. Mostrar indicadores y volver al menú")
+        print("4. Salir")
 
         opcion = input("Seleccione una opción: ")
 
@@ -648,12 +601,10 @@ if __name__ == '__main__':
             # Esta función se encargará de llamar a _menu_gestion_obra
             GestionarObra._avanzar_etapa_obra_existente()
         elif opcion == '3':
-            GestionarObra.obtener_indicadores()
-        elif opcion == '4':
             print("Mostrando indicadores...")
             GestionarObra.obtener_indicadores()
             # No hay 'break' aquí, el bucle 'while True' continuará
-        elif opcion == '5':
+        elif opcion == '4':
             print("Saliendo del programa. ¡Hasta luego!")
             break
         else:
