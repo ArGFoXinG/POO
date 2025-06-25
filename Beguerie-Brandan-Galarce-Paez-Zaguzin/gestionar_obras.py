@@ -2,7 +2,7 @@ import pandas as pd
 from modelo_orm import *
 from datetime import datetime
 import peewee
-import unicodedata # ¡No olvides importar esto!
+import unicodedata 
 
 print(f"Versión de Peewee utilizada: {peewee.__version__}")
 
