@@ -408,6 +408,7 @@ class GestionarObra:
                 elif current_etapa == 'En Ejecucion':
                     if opcion_etapa == '1':
                         try:
+                            print(f"Porcentaje de avance actual: {obra_a_actualizar.porcentaje_avance}%")
                             porcentaje_avance_val = int(input("Ingrese el porcentaje de avance (ej. 50): "))
                             obra_a_actualizar.actualizar_porcentaje_avance(porcentaje_avance_val)
                         except ValueError:
