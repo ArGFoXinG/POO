@@ -99,6 +99,7 @@ class GestionarObra:
 
             # dictionario para normalizar
             etapa_mapping = {
+                'anteproyecto': 'proyecto',
                 'en ejecucion': 'en ejecucion',
                 'en ejecución': 'en ejecucion',
                 'en obra': 'en ejecucion', 
