@@ -40,7 +40,7 @@ class GestionarObra:
         # Extrae datos del archivo CSV.
 
         try:
-            with open('observatorio-de-obras-urbanas.csv', 'r', encoding='UTF-8') as f:
+            with open('observatorio-de-obras-urbanas.csv', 'r', encoding='latin-1') as f:
                 primera_linea = f.readline()
                 print("Encabezados del CSV (crudos):", primera_linea.strip())
 
