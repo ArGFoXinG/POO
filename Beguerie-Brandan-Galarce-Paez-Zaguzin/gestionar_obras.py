@@ -40,13 +40,13 @@ class GestionarObra:
         # Extrae datos del archivo CSV.
 
         try:
-            with open('observatorio-de-obras-urbanas.csv', 'r', encoding='UTF-8') as f:
+            with open('observatorio-de-obras-urbanas.csv', 'r', encoding='latin1') as f:
                 primera_linea = f.readline()
                 print("Encabezados del CSV (crudos):", primera_linea.strip())
 
             df = pd.read_csv(
                 'observatorio-de-obras-urbanas.csv',
-                encoding='UTF-8',
+                encoding='latin1',
                 delimiter=';',
                 on_bad_lines='skip'
             )
